@@ -1,50 +1,75 @@
+---
+title: "Fruit Quality Rating: Internal Rating Example"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 # load the required packages -------------------------------------------------------------
 dir <- "/repos/Fruit-Quality-Classification/" # adjust accordingly
 source(paste0(dir, "Models/packages.R"))
 
 # load the rater data --------------------------------------------------------------------
 df <- read_xlsx("/mnt/marketability_merged_labels_w_digital_phenotypes.xlsx", sheet = 1)
+```
 
-# data cheks (QC) ------------------------------------------------------------------------
+# Overview
 
-table(df$rater) # we do not have the same number of ratings
-table(df$label) # some labels are not uniform across raters
-table(df$rating_system) # not same number of rating systmes either
+* 200 Images with muliple peppers per imaged is rated internally by Kyle, natalie and Ozan
+* 2 rating schemes are used: binary (marketable and Non-marketable) and rating with 3 categories (Poor, Average, Ideal)
+* Approximately 1000 pepper images are rated
+* The rating data then is merged with the digital phenotypes
+* The main goal here is to assess the rating agreement (di agreement) across raters and assess the divergence between having binary ratings vs ratings with three categories.
+ 
+# Data Characteristics
 
-# number of images got rated and matched with digital Phenotypes ---------------------------
-# -- Is the main reason here matching or not being rated? 
-#   need to investigate that as if it is not matching we need to define some rules around it. 
+```{r , echo = F, warning=F, message=F}
+df %>% 
+  group_by(rater, rating_system) %>%
+  summarise(N = n()) %>%
+  spread(rating_system, N) 
+```
+
+* Number of objects (```digital_objects```) that got rated varies across raters as well across rating systems
+* Maybe due to not succsessfully being merged by the digital pgenotype data?
+
+```{r , echo = F, warning=F, message=F}
 df %>% 
   group_by(rater, rating_system) %>%
   summarise(N_image = n_distinct(Image),
-            N_dig.Obj = n_distinct(digital_object))
+            N_dig.Obj = n_distinct(digital_object)) 
+```
 
-# check label consistency ------------------------------------------------------------------
+* Or the main reason here is that raters are not rating the whole set of images? need to sort out the main reason of missing ratings being merging issue or misisng rating issue.
 
-#-1 Three category rating ---- This seems consistent -----------
+```{r , warning=F, message=F}
 df %>%
   filter(rating_system == "three") %>%
   .$label %>%
   table()
+```
 
-#-2 Two category rating ---- Non-marketable vs Non-Marketable ----
+* Three category naming convention seems consistent
+
+```{r , warning=F, message=F}
 df %>%
   filter(rating_system == "two") %>%
   .$label %>%
   table()
+```
 
-df %>%
-  filter(label == "Non-marketable") %>%
-  .$rater %>%
-  table()
+* Need to make the ```Non-Marketable``` tag consistent
 
+```{r , echo = F, warning=F, message=F}
 # Correct of the lower/upper case -------------------------------
 df <- df %>%
-  mutate(label = ifelse(label == "Non-marketable", "Non-Marketable", label))
+  mutate(label = ifelse(label == "Non-marketable", "Non-Marketable", label)) 
+```
 
 
-# For now take a look at the peppers that are commonly rated and discard O'wise
-# 3178 - 2922 = 256 objects are discarded for two category ratings
+# Binary ratings {.tabset .tabset-pills} 
+
+```{r , echo = F, warning=F, message=F}
 df_two <- df %>%
   filter(rating_system == "two") %>%
   group_by(digital_object) %>%
@@ -53,14 +78,20 @@ df_two <- df %>%
   ungroup() %>%
   select(-N) %>%
   mutate(rating = ifelse(label == "Marketable", 1, 0))
+```
 
+* For now take a look at the peppers that are commonly rated and discard O'wise
+* 3178 - 2922 = 256 objects are discarded for two category ratings
 
+```{r , echo = F, warning=F, message=F}
 df_two %>%
   group_by(digital_object) %>%
   summarise(avg_r = mean(rating)) %>%
   .$avg_r %>%
-  hist()
+  hist(., main = "Average Rating Distribution")
+```
 
+```{r , warning=F, message=F}
 # 100% agrrement
 df_two %>%
   group_by(digital_object) %>%
@@ -69,19 +100,29 @@ df_two %>%
   .$agree %>%
   table() %>%
   prop.table()
+```
 
+* There is 56% full agreement of marketable and non-marketable peppers.
+
+```{r , echo=F, warning=F, message=F}
 # individual rater ratings agreement
-(df_two %>%
+df_two %>%
     ggplot(., aes(digital_object, rater, fill = rating)) + 
-    geom_tile(color = "black") +
+    geom_tile(color = "white") +
     scale_fill_gradient(low = "lightblue", high = "red") +
     theme_minimal() +
     ggtitle("Ratings (Marketable = 1) per Rater per Pepper") +
     xlab("Pepper (Barcode)") +
-    ylab("")) %>%
-  ggplotly()
+    ylab("")
+```
 
+* Kyle and ozan seems to have similar binary ratings where as Natalie seems to be more conservative assigning Marketability tag.
 
+Next we look into how each raters rating compares with the digital Phenotypes:
+
+## Ozan
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
 df_two %>%
   filter(rater == "Ozan") %>%
   select(-c(Image, digital_object, label_object, , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
@@ -92,7 +133,11 @@ df_two %>%
   facet_wrap(~Trait, scales = "free", ncol = 6) +
   theme_bw() +
   ggtitle("Trait Distribution - rated by Ozan")
+```
 
+## Kyle
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
 df_two %>%
   filter(rater == "Kyle") %>%
   select(-c(Image, digital_object, label_object, , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
@@ -103,6 +148,11 @@ df_two %>%
   facet_wrap(~Trait, scales = "free", ncol = 6) +
   theme_bw() +
   ggtitle("Trait Distribution - rated by Kyle")
+```
+
+## Natalie
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
 
 df_two %>%
   filter(rater == "Natalie") %>%
@@ -114,9 +164,11 @@ df_two %>%
   facet_wrap(~Trait, scales = "free", ncol = 6) +
   theme_bw() +
   ggtitle("Trait Distribution - rated by Natalie")
+```
 
+# Three category ratings {.tabset .tabset-pills} 
 
-# 3200 - 2985 = 215 lines are discarded
+```{r , warning=F, message=F}
 df_three <- df %>%
   filter(rating_system == "three") %>%
   group_by(digital_object) %>%
@@ -129,14 +181,20 @@ df_three <- df %>%
     label == "Quality - Average" ~ 0.5,
     TRUE ~ 1
   ))
+```
 
+* For now take a look at the peppers that are commonly rated and discard O'wise
+* 3200 - 2985 = 215 lines are discarded
 
+```{r , echo = F, warning=F, message=F}
 df_three %>%
   group_by(digital_object) %>%
   summarise(avg_r = mean(rating)) %>%
   .$avg_r %>%
-  hist()
+  hist(., main = "Average Rating Distribution")
+```
 
+```{r , warning=F, message=F}
 # 100% agrrement
 df_three %>%
   group_by(digital_object) %>%
@@ -145,19 +203,29 @@ df_three %>%
   .$agree %>%
   table() %>%
   prop.table()
+```
 
+* There is 47% full agreement of marketable and non-marketable peppers.
+
+```{r , echo=F, warning=F, message=F}
 # individual rater ratings agreement
-(df_three %>%
+df_three %>%
     ggplot(., aes(digital_object, rater, fill = rating)) + 
-    geom_tile(color = "black") +
+    geom_tile(color = "white") +
     scale_fill_gradient(low = "lightblue", high = "red") +
     theme_minimal() +
     ggtitle("Ratings (Marketable = 1) per Rater per Pepper") +
     xlab("Pepper (Barcode)") +
-    ylab("")) %>%
-  ggplotly()
+    ylab("")
+```
 
+* Kyle and ozan seems to have similar binary ratings where as Natalie seems to be more conservative assigning Marketability tag.
 
+Next we look into how each raters rating compares with the digital Phenotypes:
+
+## Ozan
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
 df_three %>%
   filter(rater == "Ozan") %>%
   select(-c(Image, digital_object, label_object, , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
@@ -168,7 +236,11 @@ df_three %>%
   facet_wrap(~Trait, scales = "free", ncol = 6) +
   theme_bw() +
   ggtitle("Trait Distribution - rated by Ozan")
+```
 
+## Kyle
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
 df_three %>%
   filter(rater == "Kyle") %>%
   select(-c(Image, digital_object, label_object, , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
@@ -179,6 +251,11 @@ df_three %>%
   facet_wrap(~Trait, scales = "free", ncol = 6) +
   theme_bw() +
   ggtitle("Trait Distribution - rated by Kyle")
+```
+
+## Natalie
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
 
 df_three %>%
   filter(rater == "Natalie") %>%
@@ -190,8 +267,11 @@ df_three %>%
   facet_wrap(~Trait, scales = "free", ncol = 6) +
   theme_bw() +
   ggtitle("Trait Distribution - rated by Natalie")
+```
 
-# --------------------------------------------------
+# Binary vs Three category rating Comparison
+
+```{r, warning=F, message=F}
 df_dif <- df_two %>%
   bind_rows(df_three) %>%
   group_by(rating_system, digital_object) %>%
@@ -210,6 +290,12 @@ df_dif %>%
   table() %>%
   prop.table()
 
+```
+
+* There is 95% agrrement on binary vs three category ratings when the threhold of acceptance is 0.4 on the average rating.
+
+
+```{r, warning=F, message=F}
 # disagreement on the mean rating cat 2 vs 3 larger than 0.4
 df_dif_great = df_dif %>%
   filter(dif > 0.4)
@@ -218,7 +304,6 @@ df_two %>%
   bind_rows(df_three) %>%
   filter(digital_object %in% df_dif_great$digital_object) %>%
   select(digital_object, label, rating_system, rater) %>%
-  spread(rating_system, label) %>% datatable()
-
-
+  spread(rating_system, label) 
+```
 
