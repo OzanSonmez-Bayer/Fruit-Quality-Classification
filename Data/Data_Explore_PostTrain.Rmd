@@ -1,0 +1,297 @@
+---
+title: "Fruit Quality Rating: Internal Rating Post Training"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# load the required packages -------------------------------------------------------------
+dir <- "/repos/Fruit-Quality-Classification/" # adjust accordingly
+source(paste0(dir, "Models/packages.R"))
+
+
+# load the rater data --------------------------------------------------------------------
+df <- read.csv("/mnt/poc3_three_category_merged_output.csv")
+```
+
+# Overview
+
+* This report examines the nternal rating characteristics after the training
+* 200 Images with muliple peppers per imaged is rated internally by Kyle, Natalie and Ozan
+* Rating with 3 categories (Poor, Average, Ideal) are used
+* Approximately 1000 pepper images are rated
+* The rating data then is merged with the digital phenotypes
+
+ 
+# Data Characteristics
+
+Below is the number of images as well as the individual papers rated by each rater:
+
+```{r , echo = F, warning=F, message=F}
+df %>% 
+  group_by(rater, rating_system) %>%
+  summarise(N_image = n_distinct(Image),
+            N_dig.Obj = n_distinct(digital_object)) 
+```
+
+Below shows the total (for three raters) category rating distributions:
+
+```{r , warning=F, message=F}
+df %>%
+  filter(rating_system == "three") %>%
+  .$label %>%
+  table()
+```
+
+
+# Three category ratings {.tabset .tabset-pills} 
+
+```{r , warning=F, message=F}
+# 90 objects were discarded as they only have 2 raters
+df_three <- df %>%
+  group_by(digital_object) %>%
+  mutate(N = n()) %>%
+  filter(N == 3) %>%
+  ungroup() %>%
+  select(-N) %>%
+  mutate(rating = case_when(
+    label == "Poor" ~ 0, 
+    label == "Average" ~ 0.5,
+    TRUE ~ 1
+  ))
+```
+
+* For now take a look at the peppers that are commonly rated and discard O'wise
+* 90 peppers are discarded as they only had 2 ratings.
+
+```{r , echo = F, warning=F, message=F}
+df_three %>%
+  group_by(digital_object) %>%
+  summarise(avg_r = mean(rating)) %>%
+  .$avg_r %>%
+  hist(., main = "Average Rating Distribution")
+```
+
+```{r , warning=F, message=F}
+# 100% agrrement
+df_three %>%
+  group_by(digital_object) %>%
+  summarise(avg_r = mean(rating),
+            agree = ifelse(avg_r <= 0.2 | avg_r >= 0.8, 1, 0)) %>%
+  .$agree %>%
+  table() %>%
+  prop.table()
+```
+
+* There is 66.3% full agreement on Poor, Average and Ideal peppers.
+
+```{r , echo=F, warning=F, message=F}
+# individual rater ratings agreement
+df_three %>%
+    ggplot(., aes(as.character(digital_object), rater, fill = rating)) + 
+    geom_tile(color = "white") +
+    scale_fill_gradient(low = "lightblue", high = "red") +
+    theme_minimal() +
+    ggtitle("Ratings (Marketable = 1) per Rater per Pepper") +
+    xlab("Pepper (Barcode)") +
+    ylab("")
+```
+
+* Kyle and Ozan seems to have similar binary ratings where as Natalie seems to be more conservative assigning Marketability tag.
+
+Next we look into how each raters rating compares with the digital Phenotypes:
+
+## Ozan
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
+df_three %>%
+  filter(rater == "Ozan") %>%
+  select(-c(Image, digital_object, label_object , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
+            Size1, Size2, image_seq, rating_system, rating, rater))%>%
+  gather("Trait", "Value", -label) %>%
+  ggplot(., aes(x = Value, fill = label)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~Trait, scales = "free", ncol = 6) +
+  theme_bw() +
+  ggtitle("Trait Distribution - rated by Ozan")
+```
+
+## Kyle
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
+df_three %>%
+  filter(rater == "Kyle") %>%
+  select(-c(Image, digital_object, label_object , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
+            Size1, Size2, image_seq, rating_system, rating, rater))%>%
+  gather("Trait", "Value", -label) %>%
+  ggplot(., aes(x = Value, fill = label)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~Trait, scales = "free", ncol = 6) +
+  theme_bw() +
+  ggtitle("Trait Distribution - rated by Kyle")
+```
+
+## Natalie
+
+```{r, echo=F, warning=F, message=F, fig.height=12, fig.width=9}
+df_three %>%
+  filter(rater == "Natalie") %>%
+  select(-c(Image, digital_object, label_object , Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y,
+            Size1, Size2, image_seq, rating_system, rating, rater))%>%
+  gather("Trait", "Value", -label) %>%
+  ggplot(., aes(x = Value, fill = label)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~Trait, scales = "free", ncol = 6) +
+  theme_bw() +
+  ggtitle("Trait Distribution - rated by Natalie")
+```
+
+# Pre vs Post Training Comparison:
+
+Average Fruit Quality assignment per rater, pre vs post tarining:
+
+```{r, echo=F, warning=F, message=F, fig.height=5, fig.width=9}
+# post training data
+df_post <- df_three %>% mutate(Trained = "Yes")
+
+# load the rater data Pre training ------------------------------------------------------
+df_three_pre <- read_xlsx("/mnt/marketability_merged_labels_w_digital_phenotypes.xlsx", sheet = 1) %>%
+  filter(rating_system == "three") %>%
+  group_by(digital_object) %>%
+  mutate(N = n()) %>%
+  filter(N == 3) %>%
+  ungroup() %>%
+  select(-N) %>%
+  mutate(rating = case_when(
+    label == "Quality - Poor" ~ 0, 
+    label == "Quality - Average" ~ 0.5,
+    TRUE ~ 1
+  ), 
+  Trained = "No") %>%
+  dplyr::rename(image_seq = label_sequence)
+
+# identify the peppers that got uniformly rated for both pre & post training
+rated_peppers <- unique(intersect(df_three_pre$digital_object, df_post$digital_object))
+
+df_all <- df_post %>%
+  bind_rows(df_three_pre) %>%
+  filter(digital_object %in% rated_peppers)
+
+df_all %>% 
+  group_by(rater, Trained) %>%
+  summarise(Avg_rating = mean(rating)) %>%
+  spread(Trained, Avg_rating) %>%
+  rename(Pre_Training = No,
+         Post_training = Yes)
+
+ggplot(df_all, aes(x = rating, fill = Trained)) +
+  geom_density(alpha = 0.2) +
+  facet_wrap(~rater) +
+  theme_bw() +
+  ggtitle("Rating Distribution Comparison: Pre & Post Training")
+```
+
+# Naive Model
+
+Here we taring a very simple ```XGBOOST``` model, where:
+
+- randomly select 75% of the peppers to be in the training sample
+- randomly select 25% of the pepper to be in the test data
+- train model with training data and look at the model performance on the test data:
+
+```{r, echo=F, warning=F, message=F, results="hide"}
+# Preliminary model:
+
+df_post0 <- df_post %>%
+  select(-c(Image, label_object, label, Box_x.x, Box_y.x, Box, Box_x.y, Box_y.y, image_seq,
+            rating_system, Trained, Size1, Size2))
+
+# define the column names
+column_names <- colnames(df_post0)[c(-1, -50)]
+  
+df0 <- df_post0 %>%
+  group_by(digital_object) %>%
+  summarise(across(column_names, mean, na.rm = TRUE))
+
+########################################
+# Split Data        -----------------###
+########################################
+set.seed(1234)
+N_obj <- n_distinct(df0$digital_object)
+N_samp <- floor(N_obj*0.25)
+test_ind <- sample(df0$digital_object, size = N_samp)
+
+df0 <- df0 %>%
+  mutate(Data = ifelse(digital_object %in% test_ind, "Test", "Train"))
+
+# check distribution after split --
+df_train <- df0 %>% filter(Data == "Train")
+df_test <- df0 %>% filter(Data == "Test")
+
+train_df_i <- df_train %>% na.omit()
+test_df_i <- df_test %>% na.omit()
+X_i <- train_df_i %>% select(-c(digital_object, rating, Data))
+Y_i <- train_df_i$rating
+X_i_test <- test_df_i %>% select(-c(digital_object, rating, Data))
+Y_i_test <- test_df_i$rating
+x_train <- xgb.DMatrix(sparse.model.matrix(~.-1, data = X_i), label = Y_i)
+x_test <- xgb.DMatrix(sparse.model.matrix(~.-1, data = X_i_test), label = Y_i_test)
+
+# Train the XGBoost classifer
+params = list(
+  eta = 0.1,
+  max_depth = 7,
+  # gamma = 10,
+  # subsample = 0.75,
+  # colsample_bytree = 1,
+  min_child_weight = 1,
+  # eval_metric = "auc",
+  # objective = "binary:logistic",
+  # num_class = 12,
+  nthread = 3
+)
+
+xgb.fit = xgb.train(
+  params = params,
+  data = x_train,
+  nrounds = 200,
+  watchlist = list(val1 = x_train, val2 = x_test)
+)
+
+# collect the predictions on the test set
+pred_i <- predict(xgb.fit, x_test)
+test_data_i <- test_df_i %>% 
+  select(digital_object, rating, Data) %>%
+  mutate(pred_prob = pred_i,
+         Actual = case_when(
+           rating > 0.75 ~ "Ideal",
+           rating < 0.25 ~ "Poor",
+           TRUE ~ "Average",
+         ), 
+         Predicted = case_when(
+           pred_prob > 0.75 ~ "Ideal",
+           pred_prob < 0.25 ~ "Poor",
+           TRUE ~ "Average",
+         ))
+```
+
+Naive model accuracy:
+```{r, echo=F}
+length(which(test_data_i$Actual == test_data_i$Predicted))/nrow(test_data_i)
+```
+
+Average rating vs predicted probability of fruit quality:
+
+```{r, echo=F, warning=F, message=F}
+test_data_i %>%
+  select(digital_object, rating, pred_prob) %>%
+  gather("Ratings", "Prob", -digital_object) %>%
+  ggplot(. , aes(x = Prob, fill = Ratings)) +
+  geom_density(alpha = 0.3) +
+  theme_minimal()
+```
+
+# Further Cosiderations:
+
+- Design the image pool in a way to balance classes, i.e., strategies to incorporate more "ideal" quality pepper in the pool of images to be rated.
+
